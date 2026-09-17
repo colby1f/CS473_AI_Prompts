@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bias-Variance Target Visualization</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f7f7f8;color:#222}
+.container{max-width:1050px;margin:auto;padding:28px 20px 40px}
+h1{margin:0 0 8px;font-size:30px}
+.subtitle{color:#666;margin-bottom:22px}
+.panel{background:#fff;border:1px solid #ddd;border-radius:12px;padding:18px;margin-bottom:18px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:20px}
+label{display:block;font-weight:600;margin-bottom:8px}
+input[type=range]{width:100%}
+.value{font-weight:700}
+.target-wrap{display:flex;justify-content:center;align-items:center}
+canvas{display:block;width:min(100%,650px);height:auto;aspect-ratio:1;border:1px solid #ddd;border-radius:10px;background:#fff}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center}
+.stat{background:#fafafa;border-radius:8px;padding:14px}
+.stat span{display:block;font-size:25px;font-weight:700;margin-top:5px}
+.explanation{line-height:1.6;color:#444}
+button{padding:10px 16px;border:1px solid #bbb;border-radius:7px;background:#fff;cursor:pointer;font-size:15px}
+button:hover{background:#f0f0f0}
+@media(max-width:650px){.stats{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Bias–Variance Target Visualization</h1>
+<div class="subtitle">See bias as how far the predictions are from the true target, and variance as how spread out the predictions are.</div>
+
+<div class="panel controls">
+  <div>
+    <label for="bias">Bias</label>
+    <input id="bias" type="range" min="0" max="0.9" step="0.05" value="0.15">
+    <div>Bias: <span class="value" id="biasValue">0.15</span></div>
+  </div>
+  <div>
+    <label for="variance">Variance</label>
+    <input id="variance" type="range" min="0.05" max="0.9" step="0.05" value="0.2">
+    <div>Variance: <span class="value" id="varianceValue">0.20</span></div>
+  </div>
+  <div>
+    <label for="shots">Number of predictions</label>
+    <input id="shots" type="range" min="10" max="150" step="10" value="60">
+    <div>Predictions: <span class="value" id="shotsValue">60</span></div>
+  </div>
+</div>
+
+<div class="panel target-wrap">
+  <canvas id="target" width="650" height="650"></canvas>
+</div>
+
+<div class="panel stats">
+  <div class="stat">Bias²<span id="biasScore">0.00</span></div>
+  <div class="stat">Variance<span id="varianceScore">0.00</span></div>
+  <div class="stat">MSE ≈ Bias² + Variance<span id="mseScore">0.00</span></div>
+</div>
+
+<div class="panel explanation">
+<strong>How to read the target:</strong>
+<ul>
+<li><strong>Bias</strong> is represented by how far the center of the predictions is from the bullseye.</li>
+<li><strong>Variance</strong> is represented by how spread out the individual predictions are.</li>
+<li><strong>Low bias + low variance:</strong> predictions are tightly clustered around the center.</li>
+<li><strong>High bias + low variance:</strong> predictions are tightly clustered, but away from the center.</li>
+<li><strong>Low bias + high variance:</strong> predictions are spread out around the center.</li>
+<li><strong>High bias + high variance:</strong> predictions are both spread out and centered away from the target.</li>
+</ul>
+</div>
+
+<div class="panel">
+<button id="regenerate" type="button">Generate new predictions</button>
+</div>
+</div>
+
+<script>
+const biasInput=document.getElementById("bias");
+const varianceInput=document.getElementById("variance");
+const shotsInput=document.getElementById("shots");
+const biasValue=document.getElementById("biasValue");
+const varianceValue=document.getElementById("varianceValue");
+const shotsValue=document.getElementById("shotsValue");
+const biasScore=document.getElementById("biasScore");
+const varianceScore=document.getElementById("varianceScore");
+const mseScore=document.getElementById("mseScore");
+const canvas=document.getElementById("target");
+const ctx=canvas.getContext("2d");
+
+let seedOffset=Math.random()*10000;
+
+function randn(){
+  let u=0,v=0;
+  while(!u)u=Math.random();
+  while(!v)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function draw(){
+  const b=Number(biasInput.value);
+  const v=Number(varianceInput.value);
+  const n=Number(shotsInput.value);
+
+  biasValue.textContent=b.toFixed(2);
+  varianceValue.textContent=v.toFixed(2);
+  shotsValue.textContent=n;
+
+  biasScore.textContent=(b*b).toFixed(2);
+  varianceScore.textContent=(v*v).toFixed(2);
+  mseScore.textContent=(b*b+v*v).toFixed(2);
+
+  const w=canvas.width,h=canvas.height,cx=w/2,cy=h/2;
+  ctx.clearRect(0,0,w,h);
+
+  // Target rings
+  const rings=[
+    {r:250,label:""},
+    {r:195,label:""},
+    {r:140,label:""},
+    {r:85,label:""},
+    {r:30,label:""}
+  ];
+
+  ctx.lineWidth=1;
+  ctx.strokeStyle="#cfcfcf";
+  rings.forEach(r=>{
+    ctx.beginPath();
+    ctx.arc(cx,cy,r.r,0,Math.PI*2);
+    ctx.stroke();
+  });
+
+  // Crosshair
+  ctx.strokeStyle="#aaa";
+  ctx.beginPath();ctx.moveTo(cx-265,cy);ctx.lineTo(cx+265,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-265);ctx.lineTo(cx,cy+265);ctx.stroke();
+
+  // Bias direction: move cluster to upper-right as bias increases
+  const angle=-Math.PI/4;
+  const maxOffset=180;
+  const ox=Math.cos(angle)*b*maxOffset;
+  const oy=Math.sin(angle)*b*maxOffset;
+
+  // Predictions
+  for(let i=0;i<n;i++){
+    const radius=Math.abs(randn())*v*115;
+    const theta=Math.random()*Math.PI*2;
+    const x=cx+ox+Math.cos(theta)*radius;
+    const y=cy+oy+Math.sin(theta)*radius;
+
+    ctx.fillStyle="#4b78a8";
+    ctx.globalAlpha=0.72;
+    ctx.beginPath();
+    ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Prediction center
+  ctx.fillStyle="#222";
+  ctx.beginPath();
+  ctx.arc(cx+ox,cy+oy,7,0,Math.PI*2);
+  ctx.fill();
+
+  // True target
+  ctx.strokeStyle="#222";
+  ctx.lineWidth=3;
+  ctx.beginPath();
+  ctx.arc(cx,cy,10,0,Math.PI*2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx-18,cy);ctx.lineTo(cx+18,cy);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx,cy-18);ctx.lineTo(cx,cy+18);
+  ctx.stroke();
+
+  ctx.fillStyle="#222";
+  ctx.font="bold 16px Arial";
+  ctx.fillText("True target",cx+18,cy-18);
+
+  ctx.font="14px Arial";
+  ctx.fillStyle="#666";
+  ctx.fillText("Prediction center",cx+ox+12,cy+oy-10);
+}
+
+[biasInput,varianceInput,shotsInput].forEach(el=>el.addEventListener("input",draw));
+document.getElementById("regenerate").addEventListener("click",()=>{seedOffset=Math.random()*10000;draw()});
+draw();
+</script>
+</body>
+</html>
